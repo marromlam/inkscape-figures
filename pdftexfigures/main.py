@@ -21,6 +21,8 @@ from threading import Timer
 logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
 log = logging.getLogger("pdftex-figures")
 
+FILE_EXTENSION = "afdesign"
+
 
 def inkscape(path: str | Path) -> None:
     with warnings.catch_warnings():
@@ -70,14 +72,14 @@ if not user_dir.is_dir():
     user_dir.mkdir()
 
 roots_file = user_dir / "roots"
-template = user_dir / "template.svg"
+template = user_dir / f"template.{FILE_EXTENSION}"
 config = user_dir / "config.py"
 
 if not roots_file.is_file():
     roots_file.touch()
 
 if not template.is_file():
-    source = str(Path(__file__).parent / "template.svg")
+    source = str(Path(__file__).parent / f"template.{FILE_EXTENSION}")
     destination = str(template)
     _ = copy(source, destination)
 
@@ -222,7 +224,7 @@ def maybe_recompile_figure(filepath: str | Path) -> None:
         log.info("Converting to SVG %s", filepath)
         afdesign_to_svg(filepath)
 
-    if filepath.suffix != ".svg":
+    if filepath.suffix == ".svg":
         log.info(f"Recompiling {filepath}")
         convert_svg_to_pdf_tex(filepath)
 
@@ -361,6 +363,7 @@ def create(title: str, root: str) -> None:
     Second argument is the figure directory.
 
     """
+    # copy SVG file
     title = title.strip()
     file_name = title.replace(" ", "-").lower() + ".svg"
     figures = Path(root).absolute()
@@ -375,6 +378,23 @@ def create(title: str, root: str) -> None:
         return
 
     _ = copy(str(template), str(figure_path))
+
+    # copy FILE_EXTENSION file
+    title = title.strip()
+    file_name = title.replace(" ", "-").lower() + f".{FILE_EXTENSION}"
+    figures = Path(root).absolute()
+    if not figures.exists():
+        figures.mkdir()
+
+    figure_path = figures / file_name
+
+    # If a file with this name already exists, append a '2'.
+    if figure_path.exists():
+        print(title + " 2")
+        return
+
+    _ = copy(str(template), str(figure_path))
+
     add_root(figures)
     open_svg_file(figure_path)
 
@@ -454,6 +474,7 @@ def afdesign_to_svg(filepath: str | Path) -> None:
     -- Open the .afdesign file and save as SVG
     tell application "System Events"
         tell process "Affinity Designer 2"
+            key code 53
             -- Export to SVG
             keystroke "s" using {{command down, shift down, option down}}
             delay 0.2
@@ -469,6 +490,9 @@ def afdesign_to_svg(filepath: str | Path) -> None:
             delay 1
             -- Type the directory path
             keystroke "{export_folder}"
+            delay 1
+            -- escape key to stop editing the path
+            key code 53
             delay 0.2
             keystroke return
             delay 0.2
@@ -477,7 +501,8 @@ def afdesign_to_svg(filepath: str | Path) -> None:
 
             delay 0.2
             -- Handle the macOS Save dialog
-            click button "Save" of splitter group 1 of sheet 1 of window 1
+            -- click button "Save" of splitter group 1 of sheet 1 of window 1
+            keystroke return
             -- delay 0.2
             -- try
             --     click button "Replace" of sheet 1 of sheet 1 of window 1
@@ -518,7 +543,7 @@ def edit(root: str) -> None:
     """
 
     selected: bool = False
-    if root.endswith(".svg"):
+    if root.endswith(f".{FILE_EXTENSION}"):
         # If the user passed an svg file, just open it.
         figures = Path(root).absolute().parent
         path = Path(root).absolute()
@@ -527,7 +552,8 @@ def edit(root: str) -> None:
         figures = Path(root).absolute()
 
         # Find svg files and sort them
-        files = figures.glob("*.svg")
+        files = figures.glob(f"*.{FILE_EXTENSION}")
+
         files = sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
 
         # Open a selection dialog using a gui picker like rofi
